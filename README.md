@@ -9,6 +9,8 @@ C# implementation of GloVe algorithm ([Pennington et al., 2014](https://nlp.stan
 - For simplicity and clarity, training is done using vanilla stochastic gradient descent and not AdaGrad.
 - Likewise, bias parameters are not included.
 
+![J(ϴ)](J(ϴ).png)
+
 ```csharp
  float sgd(Gram w, Gram c, float target) {
 
