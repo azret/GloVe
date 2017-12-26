@@ -1,5 +1,7 @@
 ﻿#
 /bin
 /.vs
-/data
+/data/*
+!/data/en
+!/data/en.vec
 /obj
