@@ -12,7 +12,7 @@ static class App {
             throw new ArgumentOutOfRangeException();
         }
         if (digrams == null) {
-            digrams = new Hash();
+            digrams = Hash.Huge();
         }
         Document.Scan(paths,
             read: (s, emit) => {
@@ -190,7 +190,7 @@ static class App {
 
         var lang = Orthography.Create();
 
-        Hash model = new Hash();
+        Hash model = Hash.Huge();
 
         if (File.Exists(MODEL)) {
             Console.WriteLine($"Loading {MODEL}...");
@@ -200,11 +200,11 @@ static class App {
 
         const int VECTOR = 37;
 
-        bool train = false; bool reread = false;
+        bool train = true; bool reread = false;
 
         if (train) {
             Hash digrams = null;
-            
+
             /* Read all available books once... */
             if (!File.Exists(DIGRAMS)) {
                 Console.WriteLine($"Reading {DIGRAMS}...");
@@ -241,63 +241,37 @@ static class App {
             Console.WriteLine($"Done.");
         }
 
-        Hash space = new Hash();
+        Hash space = Hash.Huge();
 
         Console.WriteLine($"Merging input and context vectors...");
 
         model.ForEach((g) => {
             float[] avg = new float[VECTOR];
             for (int j = 0; j < VECTOR; j++) {
-                avg[j] = g.Vector[j] + g.Vector[j + VECTOR];
+                avg[j] = (g.Vector[j] + g.Vector[j + VECTOR]) * 0.5f;
             }
             space.Put(g.Key).Vector = avg;
         });
 
         model.Clear();
 
+        Analogy(lang, VECTOR, space);
+    }
+
+    static unsafe void Simlarity(IOrthography lang, int VECTOR, Hash space) {
         while (true) {
             Console.Write("W:\\>");
-            string key = lang.Hash(Console.ReadLine());
-            Gram query = space[key];
+            string W = lang.Hash(Console.ReadLine());
+            Gram query = space[W];
             if (query == null) {
                 Console.WriteLine("Not Found.");
                 continue;
             }
-            bool ignoreStopWords = !lang.IsStopWord(key);
-            List<Tuple<string, float>> results = new List<Tuple<string, float>>();
-            space.ForEach((g) => {
-                float Dot(float[] a, float[] b) {
-                    float y = 0f;
-                    for (int j = 0; j < VECTOR; j++) {
-                        y += a[j] * b[j];
-                    }
-                    return y;
-                }
-                float Norm(float[] a) {
-                    float y = 0f;
-                    for (int j = 0; j < VECTOR; j++) {
-                        y += a[j] * a[j];
-                    }
-                    return (float)Math.Sqrt(y);
-                }
-                float Distance(float[] a, float[] b) {
-                    return Dot(a, b) / (Norm(a) * Norm(b));
-                }
-                if (ignoreStopWords) {
-                    if (lang.IsStopWord(g.Key)) {
-                        return;
-                    }
-                }
-                results.Add(new Tuple<string, float>(g.Key, Distance(query.Vector, g.Vector)));
-            });
-            results.Sort((a, b) => {
-                if (a.Item2 > b.Item2) {
-                    return -1;
-                } else if (a.Item2 < b.Item2) {
-                    return +1;
-                }
-                return 0;
-            });
+
+            bool ignoreStopWords = !lang.IsStopWord(W);
+            List<Tuple<string, float>> results = Closest(lang,
+                VECTOR, space, query.Vector, ignoreStopWords, null);
+
             int take = 128;
             for (int n = 0; n < results.Count && n < take; n++) {
                 Console.Write(results[n].Item1);
@@ -308,6 +282,111 @@ static class App {
             }
             Console.Write("\r\n\r\n");
         }
+    }
+
+    static unsafe void Analogy(IOrthography lang, int VECTOR, Hash space) {
+        while (true) {
+            Console.Write("W:\\>");
+
+            string[] input = Console.ReadLine().Split();
+
+            Hash bans = Hash.Small();
+
+            float[] query = new float[VECTOR];
+
+            bool bOK = true;
+
+            int mult = +1;
+
+            for (int i = 0; i < input.Length; i++) {
+                var s = input[i];
+                if (s == "+") {
+                    mult = +1;
+                    continue;
+                } else if (s == "-") {
+                    mult = -1;
+                    continue;
+                }
+                string W = lang.Hash(s);
+                Gram V = space[W];
+                if (V == null) {
+                    bOK = false;
+                    Console.WriteLine($"Word Not Found. '{W}'");
+                    continue;
+                }
+                bans.Put(W);
+                for (int j = 0; j < VECTOR; j++) {
+                    if (mult > 0) {
+                        query[j] += V.Vector[j];
+                    } else if (mult < 0) {
+                        query[j] -= V.Vector[j];
+                    }
+                }
+                mult = +1;
+            }
+
+            if (!bOK) {
+                continue;
+            }
+
+            List<Tuple<string, float>> results = Closest(lang,
+                VECTOR, space, query, true, bans);
+
+            int take = 128;
+            for (int n = 0; n < results.Count && n < take; n++) {
+                Console.Write(results[n].Item1);
+                Console.Write(" ");
+                if ((n + 1) % 11 == 0) {
+                    Console.Write("\r\n");
+                }
+            }
+
+            Console.Write("\r\n\r\n");
+        }
+    }
+
+    static unsafe List<Tuple<string, float>> Closest(IOrthography lang, int VECTOR, Hash space,
+        float[] query, bool ignoreStopWords, Hash bans) {
+        List<Tuple<string, float>> results = new List<Tuple<string, float>>();
+        space.ForEach((g) => {
+            float Dot(float[] a, float[] b) {
+                float y = 0f;
+                for (int j = 0; j < VECTOR; j++) {
+                    y += a[j] * b[j];
+                }
+                return y;
+            }
+            float Norm(float[] a) {
+                float y = 0f;
+                for (int j = 0; j < VECTOR; j++) {
+                    y += a[j] * a[j];
+                }
+                return (float)Math.Sqrt(y);
+            }
+            float Distance(float[] a, float[] b) {
+                return Dot(a, b) / (Norm(a) * Norm(b));
+            }
+            if (ignoreStopWords) {
+                if (lang.IsStopWord(g.Key)) {
+                    return;
+                }
+            }
+            if (bans != null) {
+                if (bans.Get(g.Key) != null) {
+                    return;
+                }
+            }
+            results.Add(new Tuple<string, float>(g.Key, Distance(query, g.Vector)));
+        });
+        results.Sort((a, b) => {
+            if (a.Item2 > b.Item2) {
+                return -1;
+            } else if (a.Item2 < b.Item2) {
+                return +1;
+            }
+            return 0;
+        });
+        return results;
     }
 
     static unsafe Gram[] Shuffle(Hash digrams) {
@@ -480,7 +559,7 @@ foremus essetis  foretis essent  forent
 fuerim fueris fuerit fuerimus fueritis fuerint
 fuissem fuisses fuisset fuissemus fuissetis fuissent
 es este esto esto estote sunto esse fuisse futurus esse fore futurus";
-                Hash stops = new Hash(7919);
+                Hash stops = System.Grams.Hash.Large();
                 foreach (var s in Conjunctions.Split()) {
                     var k = Hash(s);
                     if (k != null) stops.Put(s);
@@ -500,6 +579,9 @@ es este esto esto estote sunto esse fuisse futurus esse fore futurus";
                 return stops;
             }
             public string Hash(string s) {
+                if (s == null) {
+                    return null;
+                }
                 StringBuilder r = new StringBuilder();
                 Func<char, string> ASCII = (char c) => {
                     switch (c) {

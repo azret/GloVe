@@ -8,7 +8,16 @@
             }
             return h & 0x7fffffff;
         }
-        public Hash(int size = MAX) {
+        public static Hash Small() {
+            return new Hash(113);
+        }
+        public static Hash Large() {
+            return new Hash(1733);
+        }
+        public static Hash Huge() {
+            return new Hash(MAX);
+        }
+        private Hash(int size = MAX) {
             nodes = new Gram[size];
         }
         uint version;
