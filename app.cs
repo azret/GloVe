@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Grams;
 using System.IO;
 using System.Language;
@@ -12,7 +13,7 @@ static class App {
             throw new ArgumentOutOfRangeException();
         }
         if (digrams == null) {
-            digrams = Hash.Huge();
+            digrams = Hash.Max();
         }
         Document.Scan(paths,
             read: (s, emit) => {
@@ -53,7 +54,7 @@ static class App {
         return digrams;
     }
 
-    static void Train(Hash model, Hash data, int VECTOR) {
+    static void Train(Hash model, Hash digrams, int VECTOR) {
 
         float sgd(Gram w, Gram c, float target) {
 
@@ -106,6 +107,10 @@ static class App {
             e.Cancel = canceled = true;
         };
 
+        Gram[] shuffle = digrams.List();
+
+        digrams.Clear();
+
         System.Threading.Tasks.Parallel.For(0, Environment.ProcessorCount, new System.Threading.Tasks.ParallelOptions() {
 
         }, (episode, state) => {
@@ -115,7 +120,6 @@ static class App {
             for (int iter = 0; iter < 13; iter++) {
 
                 Console.WriteLine($"Shuffling...");
-                Gram[] shuffle = Shuffle(data);
 
                 if (canceled) {
                     Console.WriteLine($"Stopping... [{Thread.CurrentThread.ManagedThreadId}]");
@@ -125,7 +129,7 @@ static class App {
 
                 for (int m = 0; m < shuffle.Length; m++) {
 
-                    var g = shuffle[m];
+                    var g = shuffle[r.Next(0, shuffle.Length)];
 
                     if (canceled) {
                         Console.WriteLine($"Stopping... [{Thread.CurrentThread.ManagedThreadId}]");
@@ -136,7 +140,7 @@ static class App {
                     string[] window = g.Key.Split();
 
                     Gram w = model.Get(window[0]);
-                    if (w == null) {
+                    if (w == null || w.Vector == null) {
                         lock (model) {
                             w = model.Get(window[0]);
                             if (w == null) {
@@ -149,7 +153,7 @@ static class App {
                     }
 
                     Gram c = model.Get(window[1]);
-                    if (c == null) {
+                    if (c == null || c.Vector == null) {
                         lock (model) {
                             c = model.Get(window[1]);
                             if (c == null) {
@@ -191,8 +195,8 @@ static class App {
         return new Params() {
             Language = "la",
             Input = @".\data\la\",
-            Learnings = @".\data\DIGRAM.LA",
-            Output = @".\data\GLOVE.LA",
+            Learnings = @".\data\la.co",
+            Output = @".\data\la.vec",
         };
     }
 
@@ -211,7 +215,7 @@ static class App {
 
         var lang = Orthography.Create(options.Language);
 
-        Hash model = Hash.Huge();
+        Hash model = Hash.Max();
 
         if (File.Exists(options.Output)) {
             Console.WriteLine($"Loading {options.Output}...");
@@ -243,12 +247,16 @@ static class App {
             Train(model, digrams, VECTOR);
             Console.WriteLine($"Saving {options.Output}...");
             Console.WriteLine($"Please wait...");
-
-            Disk.Save(model, options.Output);
+            Gram[] sort = new Gram[model.Count]; int n = 0;
+            model.ForEach((g) => {
+                sort[n++] = g;
+            });
+            Array.Sort(sort, Gram.Score);
+            Disk.Save(sort, options.Output);
             Console.WriteLine($"Done.");
         }
 
-        Hash space = Hash.Huge();
+        Hash space = Hash.Max();
 
         Console.WriteLine($"Preparing vectors...");
         Console.WriteLine($"Done.");
@@ -263,7 +271,10 @@ static class App {
 
         model.Clear();
 
+        Norm(space.All());
+
         Analogy(lang, VECTOR, space);
+
     }
     
     static unsafe void Analogy(IOrthography lang, int VECTOR, Hash space) {
@@ -284,7 +295,7 @@ static class App {
 
             bool bOK = true;
 
-            int mult = +1; int num = 0;
+            int mult = +1; int num = 0; int stopWords = 0;
 
             Console.Write("\r\n");
             for (int i = 0; i < input.Length; i++) {
@@ -297,6 +308,9 @@ static class App {
                     continue;
                 }
                 string W = lang.Hash(s);
+                if (lang.IsStopWord(W)) {
+                    stopWords++;
+                }
                 Gram V = space[W];
                 if (V == null) {
                     bOK = false;
@@ -325,6 +339,7 @@ static class App {
                 mult = +1;
                 num++;
             }
+
             Console.Write("\r\n");
             Console.Write("\r\n");
 
@@ -332,12 +347,22 @@ static class App {
                 continue;
             }
 
-            List<Tuple<string, float>> results = Closest(lang,
-                VECTOR, space, query, true, bans);
+            var results = Find(space, query, Norm(query), (key) => {
+                if (stopWords > 0) return false;
+                return lang.IsStopWord(key);
+            });
 
-            int take = 128;
-            for (int n = 0; n < results.Count && n < take; n++) {
-                Console.Write(results[n].Item1);
+            Comparison<(string key, float distance)> Score2 = (a, b) => {
+                if (a.distance > b.distance) {
+                    return -1;
+                } else if (a.distance < b.distance) {
+                    return +1;
+                }
+                return 0;
+            };
+            Array.Sort(results, Score2);
+            for (int n = 0; n < results.Length; n++) {
+                Console.Write(results[n].key);
                 Console.Write(" ");
                 if ((n + 1) % 11 == 0) {
                     Console.Write("\r\n");
@@ -348,48 +373,52 @@ static class App {
         }
     }
 
-    static unsafe List<Tuple<string, float>> Closest(IOrthography lang, int VECTOR, Hash space,
-        float[] query, bool ignoreStopWords, Hash bans) {
-        List<Tuple<string, float>> results = new List<Tuple<string, float>>();
-        space.ForEach((g) => {
+    static float Norm(float[] a) {
+        float y = 0f;
+        for (int j = 0; j < a.Length; j++) {
+            y += a[j] * a[j];
+        }
+        y = (float)Math.Sqrt(y);
+        return y;
+    }
+
+    static void Norm(IEnumerable<Gram> grams) {
+        foreach (var g in grams) {
+            g.Norm = Norm(g.Vector);
+        }
+    }
+
+    static unsafe (string key, float distance)[] Find(Hash space,
+        float[] query, float norm, Func<string, bool> bans) {
+        (string key, float distance)[] best = new (string key, float distance)[37];
+        space.ForEach((i) => {
             float Dot(float[] a, float[] b) {
                 float y = 0f;
-                for (int j = 0; j < VECTOR; j++) {
+                for (int j = 0; j < a.Length; j++) {
                     y += a[j] * b[j];
                 }
                 return y;
             }
-            float Norm(float[] a) {
-                float y = 0f;
-                for (int j = 0; j < VECTOR; j++) {
-                    y += a[j] * a[j];
-                }
-                return (float)Math.Sqrt(y);
-            }
-            float Distance(float[] a, float[] b) {
-                return Dot(a, b) / (Norm(a) * Norm(b));
-            }
-            if (ignoreStopWords) {
-                if (lang.IsStopWord(g.Key)) {
-                    return;
-                }
-            }
             if (bans != null) {
-                if (bans.Get(g.Key) != null) {
+                if (bans(i.Key)) {
                     return;
                 }
             }
-            results.Add(new Tuple<string, float>(g.Key, Distance(query, g.Vector)));
-        });
-        results.Sort((a, b) => {
-            if (a.Item2 > b.Item2) {
-                return -1;
-            } else if (a.Item2 < b.Item2) {
-                return +1;
+            (string key, float distance) re = (
+                i.Key,
+                    Dot(query, i.Vector) / (norm * i.Norm)
+                );
+            int h = 0;
+            for (int j = 1; j < best.Length; j++) {
+                if (best[j].distance < best[h].distance) {
+                    h = j;
+                }
             }
-            return 0;
+            if (best[h].distance < re.distance) {
+                best[h] = re;
+            }
         });
-        return results;
+        return best;
     }
 
     static unsafe Gram[] Shuffle(Hash digrams) {

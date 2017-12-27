@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="app - Copy.cs" />
+    <Compile Remove="lewis.cs" />
   </ItemGroup>
 
   <ItemGroup>

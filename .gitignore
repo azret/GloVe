@@ -5,3 +5,5 @@
 !/data/en
 !/data/en.vec
 /obj
+/lewis.cs
+/GloVe.csproj.user

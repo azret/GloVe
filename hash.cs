@@ -11,10 +11,10 @@
         public static Hash Small() {
             return new Hash(113);
         }
-        public static Hash Large() {
+        public static Hash Medium() {
             return new Hash(1733);
         }
-        public static Hash Huge() {
+        public static Hash Max() {
             return new Hash(MAX);
         }
         private Hash(int size = MAX) {
@@ -87,10 +87,14 @@
             }
         }
         public Gram[] List() {
-            Gram[] list = new Gram[Count];
-            ForEach(take: (g) => {
-                list[g.ID] = g;
-            });
+            Gram[] list = new Gram[Count]; int id = 0;
+            for (int i = 0; i < nodes.Length; i++) {
+                Gram g = nodes[i];
+                while (g != null) {
+                    list[id++] = g;
+                    g = g.Prev;
+                }
+            }
             return list;
         }
         public Gram Get(string key) {
@@ -122,7 +126,7 @@
                 iter++;
             }
             if (g == null) {
-                g = new Gram(key, h, count, nodes[h % nodes.Length]);
+                g = new Gram(key, h, nodes[h % nodes.Length]);
                 if (g.Prev != null) {
                     collisions++;
                 }

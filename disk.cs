@@ -117,7 +117,7 @@ namespace System.Grams {
             }
         }
         public static Hash Load(string file, Func<string, float[], bool> take) {
-            Hash table = Hash.Huge();
+            Hash table = Hash.Max();
             using (var stream = File.OpenText(file)) {
                 Line h = new Line(stream.ReadLine());
                 int magic;

@@ -3,6 +3,83 @@ using System.Text;
 
 namespace System.Language {
     public static partial class Orthography {
+        static Func<char, string> ASCII = (char c) => {
+            switch (c) {
+                case 'Æ': return "AE";
+                case 'æ': return "ae";
+                case 'Œ': return "OE";
+                case 'œ': return "oe";
+                case 'a': return "a";
+                case 'e': return "e";
+                case 'i': return "i";
+                case 'o': return "o";
+                case 'u': return "u";
+                case 'y': return "y";
+                case 'A': return "A";
+                case 'E': return "E";
+                case 'I': return "I";
+                case 'O': return "O";
+                case 'U': return "U";
+                case 'Y': return "Y";
+                case 'â': return "a";
+                case 'ê': return "e";
+                case 'î': return "i";
+                case 'ô': return "o";
+                case 'û': return "u";
+                case 'Â': return "A";
+                case 'Ê': return "E";
+                case 'Î': return "I";
+                case 'Ô': return "O";
+                case 'Û': return "U";
+                case 'à': return "a";
+                case 'è': return "e";
+                case 'ì': return "i";
+                case 'ò': return "o";
+                case 'ù': return "u";
+                case 'À': return "A";
+                case 'È': return "E";
+                case 'Ì': return "I";
+                case 'Ò': return "O";
+                case 'Ù': return "U";
+                case 'á': return "a";
+                case 'é': return "e";
+                case 'í': return "i";
+                case 'ó': return "o";
+                case 'ú': return "v";
+                case 'ý': return "y";
+                case 'Á': return "A";
+                case 'É': return "E";
+                case 'Í': return "I";
+                case 'Ó': return "O";
+                case 'Ú': return "U";
+                case 'Ý': return "Y";
+                case 'ă': return "a";
+                case 'ĕ': return "e";
+                case 'ĭ': return "i";
+                case 'ŏ': return "o";
+                case 'ŭ': return "u";
+                case 'ў': return "y";
+                case 'Ă': return "A";
+                case 'Ĕ': return "E";
+                case 'Ĭ': return "I";
+                case 'Ŏ': return "O";
+                case 'Ŭ': return "U";
+                case 'Ў': return "Y";
+                case 'ā': return "a";
+                case 'ē': return "e";
+                case 'ī': return "i";
+                case 'ō': return "o";
+                case 'ū': return "u";
+                case 'ȳ': return "y";
+                case 'Ā': return "A";
+                case 'Ē': return "E";
+                case 'Ī': return "I";
+                case 'Ō': return "O";
+                case 'Ū': return "U";
+                case 'Ȳ': return "Y";
+            }
+            return c.ToString();
+        };
         class Latin : IOrthography {
             static Func<char, string> ASCII = (char c) => {
                 switch (c) {
@@ -90,7 +167,10 @@ namespace System.Language {
             }
             ISet<string> Stops() {
                 string Interjections = @"
-attat, attatae ecastor ecceedepol, pol
+a the there where why who of from at in about because some other
+off like with whom how I you he she their me we us
+
+attat, attatae ecastor ecceedepol, pol en ecce
 ehem eheu eho ei, hei em, hem eu euge, eu, eugepae
 euhoe heia, eia hercle, mehercle heu heus hui io o
 ohe, ohe iam papae pax pro st vae, vae vah";
@@ -482,6 +562,27 @@ es este esto esto estote sunto esse fuisse futurus esse fore futurus";
                         }
                         break;
                 }
+                return k;
+            }
+        }
+        class Lewis : IOrthography {
+            public Lewis() {
+            }
+            public bool IsStopWord(string hash) {
+                return false;
+            }
+            public string Hash(string s) {
+                if (s == null) {
+                    return null;
+                }
+                StringBuilder r = new StringBuilder();
+                if (s != null) {
+                    for (int i = 0; i < s.Length; i++) {
+                        var c = ASCII(s[i]).ToLowerInvariant();
+                        r.Append(c);
+                    }
+                }
+                string k = r.ToString();
                 return k;
             }
         }

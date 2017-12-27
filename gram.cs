@@ -65,84 +65,48 @@
             if (key == null || key.Length == 0) {
                 throw new ArgumentNullException();
             }
-            this.key = key;
+            Key = key;
         }
         public Gram(string key, float[] vector) {
             if (key == null || key.Length == 0) {
                 throw new ArgumentNullException();
             }
-            this.key = key;
-            this.vector = vector;
+            Key = key;
+            Vector = vector;
         }
-        public Gram(string key, int index) {
+        public Gram(string key, int hash, Gram prev) {
             if (key == null || key.Length == 0) {
                 throw new ArgumentNullException();
             }
-            this.key = key;
-            this.id = index;
-        }
-        public Gram(string key, int hash, int index, Gram prev) {
-            if (key == null || key.Length == 0) {
-                throw new ArgumentNullException();
-            }
-            this.key = key;
-            this.hash = hash;
-            this.prev = prev;
-            this.id = index;
+            Key = key;
+            HashCode = hash;
+            Prev = prev;
         }
         int IComparable<Gram>.CompareTo(Gram other) {
-            return Compare(this.key, other.key);
+            return Compare(Key, other.Key);
         }
-        Gram prev;
-        public Gram Prev {
-            get {
-                return prev;
-            }
-        }
-        int hash = -1;
-        public int HashCode {
-            get {
-                return hash;
-            }
-        }
+        public readonly Gram Prev;
+        public readonly int HashCode = -1;
         public override int GetHashCode() {
-            return hash;
+            return HashCode;
         }
-        string key;
-        public string Key {
-            get {
-                return key;
-            }
-        }
+        public readonly string Key;
         public override string ToString() {
-            return key;
+            return Key;
         }
         public string ToString(string format) {
             System.Text.StringBuilder fmt = new Text.StringBuilder();
             fmt.Append("[");
-            if (vector != null) {
-                for (int j = 0; j < vector.Length; j++) {
+            if (Vector != null) {
+                for (int j = 0; j < Vector.Length; j++) {
                     if (j > 0) fmt.Append(" ");
-                    fmt.Append(vector[j].ToString(format));
+                    fmt.Append(Vector[j].ToString(format));
                 }
             }
             fmt.Append("]");
             return fmt.ToString();
         }
-        int id = -1;
-        public int ID {
-            get {
-                return id;
-            }
-        }
-        float[] vector;
-        public float[] Vector {
-            get {
-                return vector;
-            }
-            set {
-                this.vector = value;
-            }
-        }
+        public float Norm;
+        public float[] Vector;
     }
 }

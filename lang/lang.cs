@@ -26,6 +26,7 @@
         public static IOrthography Create(string lang) {
             switch (lang) {
                 case "la": return new Latin();
+                case "lewis": return new Lewis();
                 case "en": return new English();
                 default: return new Generic();
             }
