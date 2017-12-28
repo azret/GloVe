@@ -97,6 +97,7 @@
             }
             return list;
         }
+        public bool Has(string key) { return Get(key) != null; }
         public Gram Get(string key) {
             if (key == null || key.Length == 0) {
                 return null;

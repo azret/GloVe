@@ -108,5 +108,10 @@
         }
         public float Norm;
         public float[] Vector;
+        public void Add(float[] vector, float c = 1.0f) {
+            for (int j = 0; j < Vector.Length; j++) {
+                Vector[j] += vector[j] * c;
+            }
+        }
     }
 }

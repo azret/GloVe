@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Grams;
 using System.IO;
 using System.Language;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 static class App {
     public static Hash CoOccurrences(Hash digrams, IOrthography lang, int window, params string[] paths) {
@@ -29,6 +29,11 @@ static class App {
                         if (j >= 0 && j < doc.Count && i != j) {
                             string c = doc[j];
                             if (w != c) {
+                                if (Gram.Compare(w, c) > 0) {
+                                    string t = w;
+                                    w = c;
+                                    c = t;
+                                }
                                 string k = (w + " " + c);
                                 lock (digrams) {
                                     float d = ((float)Math.Abs(i - j));
@@ -43,7 +48,7 @@ static class App {
                                         };
                                     }
                                     System.Diagnostics.Debug.Assert(g.Vector != null && g.Vector.Length == 1);
-                                    g.Vector[0] += 1f / d;
+                                    g.Vector[0] += 0.5f / d;
                                 }
                             }
                         }
@@ -54,9 +59,34 @@ static class App {
         return digrams;
     }
 
-    static void Train(Hash model, Hash digrams, int VECTOR) {
+    static void Train(Hash model, Gram[] shuffle, int VECTOR) {
 
-        float sgd(Gram w, Gram c, float target) {
+        void Pass() {
+            Random r = new Random();
+            for (int i = 0; i < shuffle.Length; i++) {
+                string[] window = shuffle[i].Key.Split();
+
+                Gram w = model.Get(window[0]);
+                if (w == null) {
+                    w = model.Put(window[0]);
+                    w.Vector = new float[VECTOR * 2];
+                    for (var j = 0; j < w.Vector.Length; j++)
+                        w.Vector[j] = (float)r.NextDouble() - 0.5f;
+                }
+
+                Gram c = model.Get(window[1]);
+                if (c == null) {
+                    c = model.Put(window[1]);
+                    c.Vector = new float[VECTOR * 2];
+                    for (var j = 0; j < w.Vector.Length; j++)
+                        c.Vector[j] = (float)r.NextDouble() - 0.5f;
+                }
+            }
+        }
+
+        Pass();
+
+        float sgd(Gram w, Gram c, float Pwc) {
 
             float dot(float[] Vw, float[] Vc) {
                 System.Diagnostics.Debug.Assert(Vw.Length == 2 * VECTOR);
@@ -79,10 +109,10 @@ static class App {
             }
 
             float J(float x) {
-                return f(x) * (dot(w.Vector, c.Vector) - (float)Math.Log((double)x));
+                return (dot(w.Vector, c.Vector) - (float)Math.Log((double)x));
             }
 
-            float ƒ = J(target);
+            float ʝ = J(Pwc), ƒ = f(Pwc);
 
             if (float.IsNaN(ƒ)) {
                 System.Diagnostics.Debugger.Break();
@@ -91,35 +121,29 @@ static class App {
             const float α = 0.05f;
 
             for (int k = 0; k < VECTOR; k++) {
-                float δJw = ƒ * c.Vector[k + VECTOR];
-                float δJc = ƒ * w.Vector[k];
+                float δJw = ƒ * ʝ * c.Vector[k + VECTOR];
+                float δJc = ƒ * ʝ * w.Vector[k];
                 w.Vector[k] -= α * δJw;
                 c.Vector[k + VECTOR] -= α * δJc;
             }
 
-            return 0.5f * ƒ * ƒ;
+            return 0.5f * ƒ * (ʝ * ʝ);
         }
 
-        bool canceled = false;
+        for (int iter = 0; iter < 113; iter++) {
 
-        Console.CancelKeyPress += (sender, e) => {
-            Console.WriteLine("Stopping... Please wait...");
-            e.Cancel = canceled = true;
-        };
+            if (canceled) {
+                Console.WriteLine($"Stopping... [{Thread.CurrentThread.ManagedThreadId}]");
+                break;
+            }
 
-        Gram[] shuffle = digrams.List();
+            float E = 0f; int count = 0;
 
-        digrams.Clear();
+            Shuffle(shuffle);
 
-        System.Threading.Tasks.Parallel.For(0, Environment.ProcessorCount, new System.Threading.Tasks.ParallelOptions() {
+            System.Threading.Tasks.Parallel.ForEach(shuffle, new System.Threading.Tasks.ParallelOptions() {
 
-        }, (episode, state) => {
-
-            float E = 0f; int count = 0; Random r = new Random();
-
-            for (int iter = 0; iter < 13; iter++) {
-
-                Console.WriteLine($"Shuffling...");
+            }, (co, state) => {
 
                 if (canceled) {
                     Console.WriteLine($"Stopping... [{Thread.CurrentThread.ManagedThreadId}]");
@@ -127,60 +151,30 @@ static class App {
                     return;
                 }
 
-                for (int m = 0; m < shuffle.Length; m++) {
+                string[] window = co.Key.Split();
 
-                    var g = shuffle[r.Next(0, shuffle.Length)];
+                (Gram w, Gram c) = (model.Get(window[0]), model.Get(window[1]));
 
-                    if (canceled) {
-                        Console.WriteLine($"Stopping... [{Thread.CurrentThread.ManagedThreadId}]");
-                        state.Stop();
-                        return;
-                    }
+                float e;
 
-                    string[] window = g.Key.Split();
+                E += e = sgd(w, c, co.Vector[0]);
 
-                    Gram w = model.Get(window[0]);
-                    if (w == null || w.Vector == null) {
-                        lock (model) {
-                            w = model.Get(window[0]);
-                            if (w == null) {
-                                w = model.Put(window[0]);
-                                w.Vector = new float[VECTOR * 2];
-                                for (var j = 0; j < w.Vector.Length; j++)
-                                    w.Vector[j] = (float)r.NextDouble() - 0.5f;
-                            }
-                        }
-                    }
+                int n = Interlocked.Increment(ref count);
 
-                    Gram c = model.Get(window[1]);
-                    if (c == null || c.Vector == null) {
-                        lock (model) {
-                            c = model.Get(window[1]);
-                            if (c == null) {
-                                c = model.Put(window[1]);
-                                c.Vector = new float[VECTOR * 2];
-                                for (var j = 0; j < w.Vector.Length; j++)
-                                    c.Vector[j] = (float)r.NextDouble() - 0.5f;
-                            }
-                        }
-                    }
+                E += e = sgd(c, w, co.Vector[0]);
 
-                    count++;
+                n = Interlocked.Increment(ref count);
 
-                    float e;
-
-                    E += e = sgd(w, c, g.Vector[0]);
-
-                    if (count % 75703 == 0) {
-                        Console.WriteLine($"{episode}-{iter:n0} [{count:n0}] : {E / count} Vw('{w.Key}') * Vc('{c.Key}') = {g.Vector[0]} ~ {e}");
-                    }
+                if (n % 75703 == 0) {
+                    Console.WriteLine($"{iter:n0} [{n:n0}] : {E / n} Vw('{w.Key}') * Vc('{c.Key}') = {co.Vector[0]} ~ {e}");
                 }
 
-                Console.WriteLine($"{episode:n0} [{count:n0}] : {E / count}");
+            });
 
-            }
+            Console.WriteLine($"{iter:n0} : {count} - {E / count}");
 
-        });
+        }
+
     }
 
     struct Params {
@@ -191,27 +185,49 @@ static class App {
         public string Input;
     }
 
-    static Params Latin() {
-        return new Params() {
-            Language = "la",
-            Input = @".\data\la\",
-            Learnings = @".\data\la.co",
-            Output = @".\data\la.vec",
-        };
+    static Params ParseParams(string[] args) {
+        Params Latin() {
+            return new Params() {
+                Log = 0.01f,
+                Language = "la",
+                Input = @".\data\la\",
+                Learnings = @".\data\la.co",
+                Output = @".\data\la.vec",
+            };
+        }
+
+        Params Cicero() {
+            return new Params() {
+                Log = 0.01f,
+                Language = "la",
+                Input = @".\data\la\classical\prose\classical\cicero\",
+                Learnings = @".\data\cic.co",
+                Output = @".\data\cic.vec",
+            };
+        }
+
+        Params English() {
+            return new Params() {
+                Log = 0.1f,
+                Language = "en",
+                Input = @".\data\en\",
+                Learnings = @".\data\en.co",
+                Output = @".\data\en.vec",
+            };
+        }
+
+        return Latin();
     }
 
-    static Params English() {
-        return new Params() {
-            Language = "en",
-            Input = @".\data\en\",
-            Learnings = @".\data\en.co",
-            Output = @".\data\en.vec",
+    static bool canceled = false;
+
+    static void Main(string[] args) {
+        Console.CancelKeyPress += (sender, e) => {
+            Console.WriteLine("Stopping... Please wait...");
+            e.Cancel = canceled = true;
         };
-    }
 
-    static unsafe void Main(string[] args) {
-
-        Params options = English();
+        Params options = ParseParams(args);
 
         var lang = Orthography.Create(options.Language);
 
@@ -225,62 +241,69 @@ static class App {
 
         const int VECTOR = 37;
 
-        bool train = false;
+        bool train = true;
 
         if (train) {
-            Hash digrams = null;
-
-            if (!File.Exists(options.Learnings)) {
-                Console.WriteLine($"Reading {options.Input}...");
-                digrams = CoOccurrences(null, lang, window: 13, paths: options.Input);
-                digrams.Save(options.Learnings);
-                digrams.Clear();
-                Console.WriteLine("Done.");
-            }
-
-            Console.WriteLine($"Loading {options.Learnings}...");
-            digrams = Disk.Load(options.Learnings, (key, vector) => {
-                return vector[0] >= options.Log;
-            });
-            Console.WriteLine($"Done.");
-
-            Train(model, digrams, VECTOR);
-            Console.WriteLine($"Saving {options.Output}...");
-            Console.WriteLine($"Please wait...");
-            Gram[] sort = new Gram[model.Count]; int n = 0;
-            model.ForEach((g) => {
-                sort[n++] = g;
-            });
-            Array.Sort(sort, Gram.Score);
-            Disk.Save(sort, options.Output);
-            Console.WriteLine($"Done.");
+            Train(options, lang, model, VECTOR);
         }
 
-        Hash space = Hash.Max();
-
         Console.WriteLine($"Preparing vectors...");
-        Console.WriteLine($"Done.");
 
         model.ForEach((g) => {
             float[] avg = new float[VECTOR];
             for (int j = 0; j < VECTOR; j++) {
-                avg[j] = (g.Vector[j] + g.Vector[j + VECTOR]) * 0.5f;
+                avg[j] = (/*Vw*/ g.Vector[j] + /*Vc*/ g.Vector[j + VECTOR]) * 0.5f;
             }
-            space.Put(g.Key).Vector = avg;
+            g.Vector = avg;
         });
 
-        model.Clear();
+        Norm(model.All());
 
-        Norm(space.All());
+        Console.WriteLine($"Done.");
 
-        Analogy(lang, VECTOR, space);
-
+        Analogy(lang, VECTOR, model);
     }
-    
+
+    private static unsafe void Train(Params options, IOrthography lang, Hash model, int VECTOR) {
+        Hash digrams = null;
+
+        if (!File.Exists(options.Learnings)) {
+            Console.WriteLine($"Reading {options.Input}...");
+            digrams = CoOccurrences(null, lang, window: 13, paths: options.Input);
+            var sort = digrams.List();
+            Array.Sort(sort, Gram.Score);
+            sort.Save(options.Learnings);
+            digrams.Clear();
+            digrams = null;
+            sort = null;
+            Console.WriteLine("Done.");
+        }
+
+        Console.WriteLine($"Loading {options.Learnings}...");
+        digrams = Disk.Load(options.Learnings, (key, vector) => {
+            return vector[0] >= options.Log;
+        });
+
+        Console.WriteLine($"Done.");
+
+        Gram[] shuffle = digrams.List();
+        digrams.Clear();
+        digrams = null;
+
+        Train(model, shuffle, VECTOR);
+        Console.WriteLine($"Saving {options.Output}...");
+        Console.WriteLine($"Please wait...");
+        Disk.Save(model.All(), options.Output);
+        Console.WriteLine($"Done.");
+    }
+
     static unsafe void Analogy(IOrthography lang, int VECTOR, Hash space) {
+        Gram[] W = space.List();
         Console.Write("\r\n");
         while (true) {
             Console.Write("W:\\>");
+
+            Hash bans = Hash.Small();
 
             string[] input = Console.ReadLine().Split(new char[] {
                     '\r', '\n', '\t', '\f', '\v', ' ',
@@ -289,70 +312,58 @@ static class App {
 
             if (input.Length == 0) continue;
 
-            Hash bans = Hash.Small();
-
-            float[] query = new float[VECTOR];
-
-            bool bOK = true;
-
-            int mult = +1; int num = 0; int stopWords = 0;
-
-            Console.Write("\r\n");
-            for (int i = 0; i < input.Length; i++) {
-                var s = input[i];
-                if (s == "+") {
-                    mult = +1;
-                    continue;
-                } else if (s == "-") {
-                    mult = -1;
-                    continue;
-                }
-                string W = lang.Hash(s);
-                if (lang.IsStopWord(W)) {
-                    stopWords++;
-                }
-                Gram V = space[W];
-                if (V == null) {
-                    bOK = false;
-                    Console.WriteLine($"Word Not Found. '{W}'");
-                    break;
-                }
-                if (mult > 0) {
-                    if (num > 0) {
-                        Console.Write($" + ");
-                    }
-                    Console.Write($"V('{W}')");
-                } else if (mult < 0) {
-                    if (num > 0) {
-                        Console.Write($" ");
-                    }
-                    Console.Write($"- V('{W}')");
-                }
-                bans.Put(W);
-                for (int j = 0; j < VECTOR; j++) {
-                    if (mult > 0) {
-                        query[j] += V.Vector[j];
-                    } else if (mult < 0) {
-                        query[j] -= V.Vector[j];
-                    }
-                }
-                mult = +1;
-                num++;
-            }
-
-            Console.Write("\r\n");
-            Console.Write("\r\n");
-
-            if (!bOK) {
+            if (input.Length == 1 && input[0] == "cls") {
+                Console.Clear();
                 continue;
             }
 
-            var results = Find(space, query, Norm(query), (key) => {
-                if (stopWords > 0) return false;
+            Gram query = new Gram(string.Join(' ', input), new float[VECTOR]);
+
+            float multiplier = +1.0f; int stops = 0; bool ok = true;
+
+            for (int i = 0; i < input.Length; i++) {
+                var s = input[i];
+                if (s == "+") {
+                    multiplier = +1;
+                    continue;
+                } else if (s == "-") {
+                    multiplier = -1;
+                    continue;
+                }
+                string w = lang.Hash(s);
+                if (lang.IsStopWord(w)) {
+                    stops++;
+                }
+                Gram Vw = space[w];
+                if (Vw == null) {
+                    ok = false;
+                    Console.Write($"\r\nWord Not Found. '{w}'\r\n");
+                    break;
+                }
+                bans.Put(w);
+                query.Add(Vw.Vector, multiplier);
+                multiplier = +1;
+            }
+
+            Console.Write("\r\n");
+
+            if (!ok) {
+                continue;
+            }
+
+            query.Norm = Norm(query.Vector);
+
+            var nn = Find(W, query, (key) => {
+                if (bans.Has(key)) {
+                    return true;
+                }
+                if (stops > 0) {
+                    return false;
+                }
                 return lang.IsStopWord(key);
             });
 
-            Comparison<(string key, float distance)> Score2 = (a, b) => {
+            Comparison<(string key, float distance)> Score = (a, b) => {
                 if (a.distance > b.distance) {
                     return -1;
                 } else if (a.distance < b.distance) {
@@ -360,17 +371,46 @@ static class App {
                 }
                 return 0;
             };
-            Array.Sort(results, Score2);
-            for (int n = 0; n < results.Length; n++) {
-                Console.Write(results[n].key);
+            Array.Sort(nn, Score);
+            for (int n = 0; n < nn.Length; n++) {
+                Console.Write(nn[n].key);
                 Console.Write(" ");
-                if ((n + 1) % 11 == 0) {
+                if ((n + 1) % 3 == 0) {
                     Console.Write("\r\n");
                 }
             }
 
             Console.Write("\r\n\r\n");
         }
+    }
+
+    static unsafe void Graph(IOrthography lang, int VECTOR, Gram[] W) {
+        int score((string key, float distance) a, (string key, float distance) b) {
+            if (a.distance > b.distance) {
+                return -1;
+            } else if (a.distance < b.distance) {
+                return +1;
+            }
+            return 0;
+        }
+        Console.Clear();
+        float total = W.Length; int processed = 0; DateTime sw = DateTime.Now;
+        Parallel.ForEach(W, (q) => {
+            var results = Find(W, q, (key) => {
+                return lang.IsStopWord(key);
+            });
+            Array.Sort(results, score);
+            int p = Interlocked.Increment(ref processed);
+            if (p % 31 == 0) {
+                lock (Console.Out) {
+                    double secs = (double)(DateTime.Now - sw).Seconds;
+                    if (secs > 1e-7) {
+                        Console.Clear();
+                        Console.Write($"\rSpeed: {((double)p / secs):n2}ps ({p}/{total}) ~ {(secs / 3600) * (double)total / (double)p:n2}h");
+                    }
+                }
+            }
+        });
     }
 
     static float Norm(float[] a) {
@@ -388,10 +428,11 @@ static class App {
         }
     }
 
-    static unsafe (string key, float distance)[] Find(Hash space,
-        float[] query, float norm, Func<string, bool> bans) {
-        (string key, float distance)[] best = new (string key, float distance)[37];
-        space.ForEach((i) => {
+    static unsafe (string key, float distance)[] Find(Gram[] W,
+        Gram q, Func<string, bool> bans) {
+        (string key, float distance)[] best = new (string key, float distance)[q.Vector.Length * 2];
+        for (int i = 0; i < W.Length; i++) {
+            Gram w = W[i];
             float Dot(float[] a, float[] b) {
                 float y = 0f;
                 for (int j = 0; j < a.Length; j++) {
@@ -400,13 +441,13 @@ static class App {
                 return y;
             }
             if (bans != null) {
-                if (bans(i.Key)) {
-                    return;
+                if (bans(w.Key)) {
+                    continue;
                 }
             }
             (string key, float distance) re = (
-                i.Key,
-                    Dot(query, i.Vector) / (norm * i.Norm)
+                w.Key,
+                    Dot(q.Vector, w.Vector) / (q.Norm * w.Norm)
                 );
             int h = 0;
             for (int j = 1; j < best.Length; j++) {
@@ -417,23 +458,17 @@ static class App {
             if (best[h].distance < re.distance) {
                 best[h] = re;
             }
-        });
+        }
         return best;
     }
 
-    static unsafe Gram[] Shuffle(Hash digrams) {
-        Gram[] shuffle = new Gram[digrams.Count]; int m = 0;
-        digrams.ForEach((g) => {
-            shuffle[m++] = g;
-        });
-        Array.Resize(ref shuffle, m);
-        Random random = new Random();
+    static unsafe void Shuffle(Gram[] shuffle) {
+        Random r = new Random();
         for (int i = 0; i < shuffle.Length; i++) {
-            Gram tmp = shuffle[i];
-            int r = random.Next(i, shuffle.Length);
-            shuffle[i] = shuffle[r];
-            shuffle[r] = tmp;
+            Gram j = shuffle[i];
+            int n = r.Next(i, shuffle.Length);
+            shuffle[i] = shuffle[n];
+            shuffle[n] = j;
         }
-        return shuffle;
     }
 }

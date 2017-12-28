@@ -55,7 +55,7 @@ C# implementation of GloVe algorithm ([Pennington et al., 2014](https://nlp.stan
 
 ### Example
 
-A small file (***data\en.vec***) with pre-trained vectors on select works of Cicero, Shakespeare and Leo Tolstoy's,
+A small file (***data\en.vec***) with pre-trained vectors on select works of Cicero, Shakespeare and Leo Tolstoy's 
 War and Peace is included.
 
 ```
