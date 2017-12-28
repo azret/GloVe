@@ -12,45 +12,45 @@ C# implementation of GloVe algorithm ([Pennington et al., 2014](https://nlp.stan
 ![J(ϴ)](J(ϴ).png)
 
 ```csharp
- float sgd(Gram w, Gram c, float target) {
+float sgd(Gram w, Gram c, float Pwc) {
 
-     float dot(float[] Vw, float[] Vc) {
-         System.Diagnostics.Debug.Assert(Vw.Length == 2 * VECTOR);
-         System.Diagnostics.Debug.Assert(Vc.Length == 2 * VECTOR);
-         var y = 0f;
-         for (int k = 0; k < VECTOR; k++) {
-             y += Vw[k] * Vc[k + VECTOR];
-         }
-         return y;
-     }
+    float dot(float[] Vw, float[] Vc) {
+        System.Diagnostics.Debug.Assert(Vw.Length == 2 * VECTOR);
+        System.Diagnostics.Debug.Assert(Vc.Length == 2 * VECTOR);
+        var y = 0f;
+        for (int k = 0; k < VECTOR; k++) {
+            y += Vw[k] * Vc[k + VECTOR];
+        }
+        return y;
+    }
 
-     float f(float x) {
-         float y; float Xmax = 100f;
-         if (x < Xmax) {
-             y = (float)Math.Pow(x / Xmax, 0.75);
-         } else {
-             y = 1;
-         }
-         return y;
-     }
+    float f(float x) {
+        float y; float Xmax = 100f;
+        if (x < Xmax) {
+            y = (float)Math.Pow(x / Xmax, 0.75);
+        } else {
+            y = 1;
+        }
+        return y;
+    }
 
-     float J(float x) {
-         return f(x) * (dot(w.Vector, c.Vector) - (float)Math.Log((double)x));
-     }
+    float J(float x) {
+        return (dot(w.Vector, c.Vector) - (float)Math.Log((double)x));
+    }
 
-     float ƒ = J(target);
+    float ʝ = J(Pwc), ƒ = f(Pwc);
 
-     const float α = 0.05f;
+    const float α = 0.05f;
 
-     for (int k = 0; k < VECTOR; k++) {
-         float δJw = ƒ * c.Vector[k + VECTOR];
-         float δJc = ƒ * w.Vector[k];
-         w.Vector[k] -= α * δJw;
-         c.Vector[k + VECTOR] -= α * δJc;
-     }
+    for (int k = 0; k < VECTOR; k++) {
+        float δJw = ƒ * ʝ * c.Vector[k + VECTOR];
+        float δJc = ƒ * ʝ * w.Vector[k];
+        w.Vector[k] -= α * δJw;
+        c.Vector[k + VECTOR] -= α * δJc;
+    }
 
-     return 0.5f * ƒ * ƒ;
- }
+    return ƒ * (ʝ * ʝ) / 2;
+}
 ```
 
 ### Example
