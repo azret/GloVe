@@ -13,13 +13,14 @@ C# implementation of GloVe algorithm ([Pennington et al., 2014](https://nlp.stan
 
 ```csharp
 float sgd(Gram w, Gram c, float Pwc) {
+	const int W = 0; const int C = VECTOR;
 
     float dot(float[] Vw, float[] Vc) {
         System.Diagnostics.Debug.Assert(Vw.Length == 2 * VECTOR);
         System.Diagnostics.Debug.Assert(Vc.Length == 2 * VECTOR);
         var y = 0f;
         for (int k = 0; k < VECTOR; k++) {
-            y += Vw[k] * Vc[k + VECTOR];
+            y += Vw[k + W] * Vc[k + C];
         }
         return y;
     }
@@ -43,10 +44,10 @@ float sgd(Gram w, Gram c, float Pwc) {
     const float α = 0.05f;
 
     for (int k = 0; k < VECTOR; k++) {
-        float δJw = ƒ * ʝ * c.Vector[k + VECTOR];
-        float δJc = ƒ * ʝ * w.Vector[k];
-        w.Vector[k] -= α * δJw;
-        c.Vector[k + VECTOR] -= α * δJc;
+        float δJw = ƒ * ʝ * c.Vector[k + C];
+        float δJc = ƒ * ʝ * w.Vector[k + W];
+        w.Vector[k + W] -= α * δJw;
+        c.Vector[k + C] -= α * δJc;
     }
 
     return ƒ * (ʝ * ʝ) / 2;

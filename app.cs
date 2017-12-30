@@ -61,7 +61,7 @@ static class App {
 
     static void Train(Hash model, Gram[] shuffle, int VECTOR) {
 
-        void Pass() {
+        void Prepare() {
             Random r = new Random();
             for (int i = 0; i < shuffle.Length; i++) {
                 string[] window = shuffle[i].Key.Split();
@@ -74,6 +74,8 @@ static class App {
                         w.Vector[j] = (float)r.NextDouble() - 0.5f;
                 }
 
+                w.Norm = 0;
+
                 Gram c = model.Get(window[1]);
                 if (c == null) {
                     c = model.Put(window[1]);
@@ -81,10 +83,12 @@ static class App {
                     for (var j = 0; j < w.Vector.Length; j++)
                         c.Vector[j] = (float)r.NextDouble() - 0.5f;
                 }
+
+                c.Norm = 0;
             }
         }
 
-        Pass();
+        Prepare();
 
         float sgd(Gram w, Gram c, float Pwc) {
 
@@ -121,6 +125,7 @@ static class App {
             const float α = 0.05f;
 
             for (int k = 0; k < VECTOR; k++) {
+                const float μ = 0.09f;
                 float δJw = ƒ * ʝ * c.Vector[k + VECTOR];
                 float δJc = ƒ * ʝ * w.Vector[k];
                 w.Vector[k] -= α * δJw;
@@ -130,7 +135,7 @@ static class App {
             return 0.5f * ƒ * (ʝ * ʝ);
         }
 
-        for (int iter = 0; iter < 113; iter++) {
+        for (int iter = 0; iter < 113 * 113; iter++) {
 
             if (canceled) {
                 Console.WriteLine($"Stopping... [{Thread.CurrentThread.ManagedThreadId}]");
@@ -165,9 +170,9 @@ static class App {
 
                 n = Interlocked.Increment(ref count);
 
-                if (n % 75703 == 0) {
-                    Console.WriteLine($"{iter:n0} [{n:n0}] : {E / n} Vw('{w.Key}') * Vc('{c.Key}') = {co.Vector[0]} ~ {e}");
-                }
+                //if (n % 75703 == 0) {
+                //    Console.WriteLine($"{iter:n0} [{n:n0}] : {E / n} Vw('{w.Key}') * Vc('{c.Key}') = {co.Vector[0]} ~ {e}");
+                //}
 
             });
 
@@ -177,17 +182,18 @@ static class App {
 
     }
 
-    struct Params {
+    struct Options {
         public float Log;
+        public bool Train;
         public string Language;
         public string Output;
         public string Learnings;
         public string Input;
     }
 
-    static Params ParseParams(string[] args) {
-        Params Latin() {
-            return new Params() {
+    static Options ParseParams(string[] args) {
+        Options Latin() {
+            return new Options() {
                 Log = 0.01f,
                 Language = "la",
                 Input = @".\data\la\",
@@ -196,8 +202,8 @@ static class App {
             };
         }
 
-        Params Cicero() {
-            return new Params() {
+        Options Cicero() {
+            return new Options() {
                 Log = 0.01f,
                 Language = "la",
                 Input = @".\data\la\classical\prose\classical\cicero\",
@@ -206,8 +212,8 @@ static class App {
             };
         }
 
-        Params English() {
-            return new Params() {
+        Options English() {
+            return new Options() {
                 Log = 0.1f,
                 Language = "en",
                 Input = @".\data\en\",
@@ -216,7 +222,9 @@ static class App {
             };
         }
 
-        return Latin();
+        Options options = English();
+        options.Train = false;
+        return options;
     }
 
     static bool canceled = false;
@@ -227,7 +235,7 @@ static class App {
             e.Cancel = canceled = true;
         };
 
-        Params options = ParseParams(args);
+        Options options = ParseParams(args);
 
         var lang = Orthography.Create(options.Language);
 
@@ -239,11 +247,9 @@ static class App {
             Console.WriteLine($"Done.");
         }
 
-        const int VECTOR = 37;
+        const int VECTOR = 47;
 
-        bool train = true;
-
-        if (train) {
+        if (options.Train) {
             Train(options, lang, model, VECTOR);
         }
 
@@ -264,7 +270,7 @@ static class App {
         Analogy(lang, VECTOR, model);
     }
 
-    private static unsafe void Train(Params options, IOrthography lang, Hash model, int VECTOR) {
+    private static unsafe void Train(Options options, IOrthography lang, Hash model, int VECTOR) {
         Hash digrams = null;
 
         if (!File.Exists(options.Learnings)) {
@@ -375,7 +381,7 @@ static class App {
             for (int n = 0; n < nn.Length; n++) {
                 Console.Write(nn[n].key);
                 Console.Write(" ");
-                if ((n + 1) % 3 == 0) {
+                if ((n + 1) % 7 == 0) {
                     Console.Write("\r\n");
                 }
             }
